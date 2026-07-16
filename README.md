@@ -141,6 +141,35 @@ Genera `assets/config.json`:
 node scripts/configure-frontend.mjs
 ```
 
+## Inicio rápido local en Windows
+
+Antes de iniciar, confirma que Docker Desktop y Ollama estén funcionando y que los archivos de configuración local ya existan:
+
+- `apps/backend-api/.env`
+- `apps/worker/.env`
+- `apps/frontend-angular/src/assets/config.json`
+
+Desde la raíz del repositorio ejecuta:
+
+```powershell
+.\scripts\start-local.ps1
+
+El script valida las dependencias y abre terminales independientes para:
+
+- FastAPI en http://127.0.0.1:8000
+- Angular en http://localhost:4200
+- Worker Python local
+- Ollama en http://127.0.0.1:11434
+
+También abre automáticamente la aplicación y la documentación de la API.
+
+Para evitar abrir el navegador:
+```powershell
+.\scripts\start-local.ps1 -SkipBrowser
+
+Para comprobar el estado de los cuatro servicios:
+```powershell
+.\scripts\status-local.ps1
 ## 4. Ejecutar el frontend
 
 ```bash
