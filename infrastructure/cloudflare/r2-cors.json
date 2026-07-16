@@ -1,0 +1,10 @@
+[
+  {
+    "AllowedOrigins": ["http://localhost:4200", "https://app.TU_DOMINIO.com"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+

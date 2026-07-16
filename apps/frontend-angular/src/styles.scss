@@ -1,0 +1,15 @@
+@use '@angular/material' as mat;
+
+@include mat.core();
+$primary: mat.define-palette(mat.$indigo-palette, 700);
+$accent: mat.define-palette(mat.$orange-palette, 500);
+$theme: mat.define-light-theme((color: (primary: $primary, accent: $accent), typography: mat.define-typography-config(), density: 0));
+@include mat.all-component-themes($theme);
+
+:root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f7f8fc; color: #1e293b; }
+* { box-sizing: border-box; }
+html, body { min-height: 100%; margin: 0; }
+body { background: radial-gradient(circle at 10% 0%, #eef2ff 0, transparent 28rem), #f7f8fc; }
+button, input, textarea { font: inherit; }
+::selection { background: #c7d2fe; color: #1e1b4b; }
+
