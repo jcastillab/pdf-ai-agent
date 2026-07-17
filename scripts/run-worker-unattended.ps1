@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [int]$RestartDelaySeconds = 10
+    [int]$RestartDelaySeconds = 10,
+    [string]$OllamaModelsPath = "$env:USERPROFILE\.ollama\models"
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +31,15 @@ function Test-Ollama {
         return $null
     }
 }
+
+if (-not (Test-Path -LiteralPath $OllamaModelsPath)) {
+    throw "No se encontro la carpeta de modelos de Ollama en: $OllamaModelsPath"
+}
+
+# Do not depend on a stale user/session environment variable. Every Ollama
+# process started by this supervisor inherits the verified models directory.
+$env:OLLAMA_MODELS = (Resolve-Path -LiteralPath $OllamaModelsPath).Path
+Write-LauncherLog "Ollama models path: $env:OLLAMA_MODELS"
 
 if (-not (Test-Path -LiteralPath $pythonPath)) {
     throw "No se encontro el Python del worker en: $pythonPath"
