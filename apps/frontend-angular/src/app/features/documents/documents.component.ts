@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -45,7 +45,7 @@ import { RuntimeConfigService } from '../../core/runtime-config.service';
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class DocumentsComponent implements OnInit {
+export class DocumentsComponent implements OnInit, OnDestroy {
   readonly columns = ['name', 'status', 'pages', 'date', 'action'];
   readonly documents = signal<DocumentItem[]>([]);
   readonly loading = signal(true);
@@ -54,18 +54,42 @@ export class DocumentsComponent implements OnInit {
   readonly uploadMessage = signal('');
   readonly error = signal('');
   readonly maxSizeMb: number;
+  private refreshTimer?: ReturnType<typeof setTimeout>;
+  private destroyed = false;
 
   constructor(private readonly api: ApiService, config: RuntimeConfigService) {
     this.maxSizeMb = config.config.maxPdfSizeMb;
   }
 
   ngOnInit(): void { void this.load(); }
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    this.clearRefreshTimer();
+  }
 
-  async load(): Promise<void> {
-    this.loading.set(true);
+  async load(showLoading = true): Promise<void> {
+    this.clearRefreshTimer();
+    if (showLoading) this.loading.set(true);
     try { this.documents.set((await this.api.listDocuments()).items); }
     catch (error) { this.error.set(error instanceof Error ? error.message : 'No se cargaron los documentos'); }
-    finally { this.loading.set(false); }
+    finally {
+      if (showLoading) this.loading.set(false);
+      this.scheduleRefresh();
+    }
+  }
+
+  private scheduleRefresh(): void {
+    if (this.destroyed || !this.documents().some((doc) => !['completed', 'failed'].includes(doc.status))) return;
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      void this.load(false);
+    }, 2500);
+  }
+
+  private clearRefreshTimer(): void {
+    if (!this.refreshTimer) return;
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = undefined;
   }
 
   drag(event: DragEvent, active: boolean): void { event.preventDefault(); this.dragging.set(active); }
@@ -87,4 +111,3 @@ export class DocumentsComponent implements OnInit {
     return labels[status] ?? status;
   }
 }
-
