@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from worker.clients.ollama import Generation
 from worker.clients.supabase import QueueMessage, SupabaseClient
 from worker.config import WorkerSettings, get_settings
 from worker.main import handle_message, main, run, settings
+from worker.services.pdf_processing import ExtractedPage
 from worker.services.tasks import JobCancelled, TaskService
 
 JOB_ID = UUID("00000000-0000-0000-0000-000000000010")
@@ -88,7 +90,41 @@ def test_settings_defaults_and_cache() -> None:
     configured = WorkerSettings(_env_file=None)
     assert configured.queue_name == "document_jobs"
     assert configured.embedding_dimensions == 768
+    assert configured.ollama_vision_model == "qwen3-vl:4b"
     assert get_settings() is get_settings()
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_page_uses_visual_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, database, ollama = task_service()
+    page = ExtractedPage(1, "texto parcial", "ocr", 0.25, 90, True)
+    monkeypatch.setattr(
+        "worker.services.tasks.render_page_image",
+        lambda path, page_number, rotation, scale: b"png",
+    )
+    ollama.transcribe_image.return_value = Generation(
+        json.dumps(
+            {
+                "text": "| Campo | Valor |\n| --- | --- |\n| Lote | 4102 |",
+                "confidence": 0.91,
+                "requires_review": False,
+                "uncertain_segments": [],
+            }
+        ),
+        50,
+        20,
+        30,
+        "qwen3-vl:4b",
+    )
+
+    await service._apply_vision_ocr([page], Path("sample.pdf"), OWNER_ID, DOCUMENT_ID)
+
+    assert page.extraction_method == "ocr_vision"
+    assert page.confidence == 0.91
+    assert page.rotation_degrees == 90
+    assert page.requires_review is False
+    ollama.transcribe_image.assert_awaited_once_with(b"png", 1)
+    database.insert.assert_awaited_once()
 
 
 @pytest.mark.asyncio

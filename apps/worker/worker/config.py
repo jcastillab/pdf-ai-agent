@@ -27,6 +27,7 @@ class WorkerSettings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "qwen3:8b"
     ollama_embedding_model: str = "nomic-embed-text"
+    ollama_vision_model: str = "qwen3-vl:4b"
     embedding_dimensions: int = 768
     ollama_timeout_seconds: int = 300
 
@@ -38,6 +39,9 @@ class WorkerSettings(BaseSettings):
     rag_top_k: int = 6
     tesseract_language: str = "spa+eng"
     ocr_enabled: bool = True
+    vision_ocr_enabled: bool = True
+    vision_ocr_confidence_threshold: float = 0.68
+    vision_ocr_render_scale: float = 2.0
     clamav_enabled: bool = False
     clamav_host: str = "localhost"
     clamav_port: int = 3310

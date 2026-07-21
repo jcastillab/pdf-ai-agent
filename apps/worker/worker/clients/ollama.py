@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from dataclasses import dataclass
@@ -26,11 +27,13 @@ class OllamaClient:
         base_url: str,
         chat_model: str,
         embedding_model: str,
+        vision_model: str,
         timeout_seconds: int,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.chat_model = chat_model
         self.embedding_model = embedding_model
+        self.vision_model = vision_model
         self.timeout = timeout_seconds
 
     @retry(
@@ -91,6 +94,64 @@ class OllamaClient:
             output_tokens=int(data.get("eval_count", 0)),
             latency_ms=int((time.perf_counter() - started) * 1000),
             model=data.get("model", self.chat_model),
+        )
+
+    @retry(
+        retry=retry_if_exception_type((httpx.TransportError, httpx.TimeoutException)),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential_jitter(initial=1, max=5),
+        reraise=True,
+    )
+    async def transcribe_image(self, image_png: bytes, page_number: int) -> Generation:
+        schema = {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "requires_review": {"type": "boolean"},
+                "uncertain_segments": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["text", "confidence", "requires_review", "uncertain_segments"],
+        }
+        prompt = (
+            f"Transcribe la página {page_number} del documento. Lee texto impreso y manuscrito. "
+            "Conserva la estructura de tablas en Markdown. No inventes valores. Usa [ilegible] "
+            "cuando un fragmento no sea claro y agrégalo a uncertain_segments."
+        )
+        started = time.perf_counter()
+        payload: dict[str, Any] = {
+            "model": self.vision_model,
+            "stream": False,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [base64.b64encode(image_png).decode("ascii")],
+                }
+            ],
+            "format": schema,
+            "think": False,
+            "options": {"temperature": 0},
+        }
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(f"{self.base_url}/api/chat", json=payload)
+        if response.is_error:
+            raise OllamaError(f"Ollama vision HTTP {response.status_code}")
+        data = response.json()
+        text = data.get("message", {}).get("content", "")
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise OllamaError("Ollama vision no devolvió JSON válido") from exc
+        return Generation(
+            text=text,
+            input_tokens=int(data.get("prompt_eval_count", 0)),
+            output_tokens=int(data.get("eval_count", 0)),
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            model=data.get("model", self.vision_model),
         )
 
     async def health_check(self) -> bool:

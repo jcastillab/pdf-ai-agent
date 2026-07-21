@@ -5,16 +5,19 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
 
+import httpx
 import structlog
 
-from worker.clients.ollama import Generation, OllamaClient
+from worker.clients.ollama import Generation, OllamaClient, OllamaError
 from worker.clients.storage import ObjectStorage
 from worker.clients.supabase import SupabaseClient
 from worker.config import WorkerSettings
 from worker.services.pdf_processing import (
     Chunk,
+    ExtractedPage,
     chunk_pages,
     extract_pages,
+    render_page_image,
     scan_clamav,
     sha256_file,
     validate_pdf,
@@ -97,6 +100,58 @@ class TaskService:
             },
         )
 
+    async def _apply_vision_ocr(
+        self,
+        pages: list[ExtractedPage],
+        local_path: Path,
+        owner_id: UUID,
+        document_id: UUID,
+    ) -> None:
+        if not self.settings.vision_ocr_enabled:
+            return
+        for page in pages:
+            if page.extraction_method != "ocr":
+                continue
+            if page.confidence >= self.settings.vision_ocr_confidence_threshold:
+                continue
+            try:
+                image_png = await asyncio.to_thread(
+                    render_page_image,
+                    local_path,
+                    page.page_number,
+                    page.rotation_degrees,
+                    self.settings.vision_ocr_render_scale,
+                )
+                generation = await self.ollama.transcribe_image(image_png, page.page_number)
+                result = json.loads(generation.text)
+                visual_text = str(result.get("text", "")).strip()
+                visual_confidence = max(0.0, min(1.0, float(result.get("confidence", 0))))
+                uncertain = tuple(
+                    str(segment)[:300]
+                    for segment in result.get("uncertain_segments", [])
+                    if str(segment).strip()
+                )
+                if visual_text:
+                    page.text = visual_text
+                    page.extraction_method = "ocr_vision"
+                    page.confidence = visual_confidence
+                    page.uncertain_segments = uncertain
+                    page.requires_review = (
+                        bool(result.get("requires_review"))
+                        or visual_confidence < self.settings.vision_ocr_confidence_threshold
+                        or bool(uncertain)
+                    )
+                await self._record_llm(
+                    generation, "handwritten_ocr", owner_id, document_id, None
+                )
+            except (OllamaError, httpx.HTTPError, ValueError, TypeError) as exc:
+                page.requires_review = True
+                logger.warning(
+                    "vision_ocr_failed",
+                    page_number=page.page_number,
+                    error=str(exc)[:300],
+                )
+
     async def process_document(self, job_id: UUID, document_id: UUID, owner_id: UUID) -> dict:
         document = await self.db.get_one("documents", document_id)
         if not document or document["owner_id"] != str(owner_id):
@@ -140,6 +195,7 @@ class TaskService:
                 self.settings.ocr_enabled,
                 self.settings.tesseract_language,
             )
+            await self._apply_vision_ocr(pages, local_path, owner_id, document_id)
             await self.db.patch("documents", document_id, {"status": "chunking"})
             await self._progress(job_id, "chunking", 45, "chunk")
             chunks = chunk_pages(
@@ -159,6 +215,11 @@ class TaskService:
                         "text": page.text,
                         "extraction_method": page.extraction_method,
                         "confidence": page.confidence,
+                        "metadata": {
+                            "rotation_degrees": page.rotation_degrees,
+                            "requires_review": page.requires_review,
+                            "uncertain_segments": list(page.uncertain_segments),
+                        },
                     }
                     for page in pages
                 ],
@@ -193,6 +254,13 @@ class TaskService:
                 "sha256": digest,
                 "summary": generation.text,
                 "ocr_pages": sum(page.extraction_method == "ocr" for page in pages),
+                "vision_ocr_pages": sum(
+                    page.extraction_method == "ocr_vision" for page in pages
+                ),
+                "rotated_pages": [
+                    page.page_number for page in pages if page.rotation_degrees != 0
+                ],
+                "review_pages": [page.page_number for page in pages if page.requires_review],
             }
             await self.db.patch(
                 "processing_jobs",
@@ -227,8 +295,8 @@ class TaskService:
                         "text": chunk.text,
                         "token_count": chunk.token_count,
                         "content_hash": chunk.content_hash,
-                        "extraction_method": "native_or_ocr",
-                        "confidence": 1,
+                        "extraction_method": chunk.extraction_method,
+                        "confidence": chunk.confidence,
                         "embedding_model": self.settings.ollama_embedding_model,
                         "embedding": embedding,
                     }

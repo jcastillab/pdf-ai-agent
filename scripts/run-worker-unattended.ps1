@@ -72,7 +72,7 @@ if (-not $ollama) {
 }
 
 $modelNames = @($ollama.models | ForEach-Object { $_.name })
-foreach ($requiredModel in @("qwen3:8b", "nomic-embed-text:latest")) {
+foreach ($requiredModel in @("qwen3:8b", "qwen3-vl:4b", "nomic-embed-text:latest")) {
     if ($requiredModel -notin $modelNames) {
         throw "Falta el modelo requerido '$requiredModel'."
     }
