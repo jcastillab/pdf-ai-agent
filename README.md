@@ -13,7 +13,7 @@ Implementado:
 - Worker local sin puertos públicos ni túneles hacia TU computador.
 - Validación por extensión, MIME, magic bytes, tamaño, páginas y estructura del PDF.
 - Antivirus ClamAV opcional.
-- Extracción con PyMuPDF y OCR selectivo con Tesseract.
+- Extracción con PyMuPDF, OCR selectivo con Tesseract y fallback visual para escritura manual.
 - Segmentación con trazabilidad por página.
 - Embeddings de Ollama y RAG híbrido sobre pgvector más búsqueda textual.
 - Respuestas con citas validadas contra los fragmentos recuperados.
@@ -82,8 +82,13 @@ Descarga los modelos:
 
 ```powershell
 ollama pull qwen3:8b
+ollama pull qwen3-vl:4b
 ollama pull nomic-embed-text
 ```
+
+`qwen3-vl:4b` procesa páginas manuscritas o tablas cuando Tesseract obtiene una confianza
+inferior al umbral configurado. El worker corrige rotaciones de 90 grados, conserva el texto de
+Tesseract si el modelo visual falla y marca las páginas que requieren revisión.
 
 `nomic-embed-text` genera 768 dimensiones. Si cambias el modelo, ajusta `EMBEDDING_DIMENSIONS` y la columna `vector(768)` mediante una migración.
 

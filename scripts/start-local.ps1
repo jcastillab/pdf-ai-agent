@@ -73,7 +73,7 @@ try {
 }
 
 $availableModels = @($ollamaTags.models | ForEach-Object { $_.name })
-foreach ($model in @("qwen3:8b", "nomic-embed-text:latest")) {
+foreach ($model in @("qwen3:8b", "qwen3-vl:4b", "nomic-embed-text:latest")) {
     if ($model -notin $availableModels) {
         Write-Warning "El modelo '$model' no aparece en Ollama. Modelos detectados: $($availableModels -join ', ')"
     }

@@ -110,6 +110,7 @@ async def main() -> None:
         settings.ollama_base_url,
         settings.ollama_chat_model,
         settings.ollama_embedding_model,
+        settings.ollama_vision_model,
         settings.ollama_timeout_seconds,
     )
     if not await ollama.health_check():
